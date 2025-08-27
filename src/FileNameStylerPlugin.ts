@@ -19,7 +19,10 @@ export class FileNameStylerPlugin extends Plugin {
                 mutations.some(
                     (m) =>
                         m.target instanceof HTMLElement &&
-                        m.target.closest(".nav-file-title")
+                        (m.target.closest(".nav-file-title") ||
+                            m.target.closest(".nav-folder") ||
+                            m.target.closest(".nav-file") ||
+                            m.target.closest(".workspace-leaf-content"))
                 )
             ) {
                 setTimeout(() => this.refreshAll(), 50);
@@ -28,9 +31,8 @@ export class FileNameStylerPlugin extends Plugin {
 
         this.refreshAll();
 
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true,
+        this.app.vault.on("rename", () => {
+            this.restoreOriginalFileTitles();
         });
     }
 
