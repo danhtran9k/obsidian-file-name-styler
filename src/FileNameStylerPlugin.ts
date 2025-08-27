@@ -9,10 +9,37 @@ import { SettingsMigrator } from "./SettingsMigrator";
 export class FileNameStylerPlugin extends Plugin {
     settings!: FileNameStylerGlobalSettings;
     observer!: MutationObserver;
+    renameObserver!: MutationObserver;
 
     async onload() {
         await this.loadSettings();
         this.addSettingTab(new FileNameStylerSettingTab(this.app, this));
+
+        // restore original file titles when renaming
+        this.renameObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (
+                    mutation.type === "attributes" &&
+                    mutation.attributeName === "class" &&
+                    mutation.target instanceof HTMLElement
+                ) {
+                    const el = mutation.target;
+                    if (
+                        el.classList.contains("tree-item-self") &&
+                        el.classList.contains("is-being-renamed")
+                    ) {
+                        const titleEl = el.querySelector(
+                            ".nav-file-title-content"
+                        ) as HTMLElement | null;
+
+                        if (titleEl && titleEl.dataset.originalTitle) {
+                            titleEl.textContent = titleEl.dataset.originalTitle;
+                            this.restoreOriginalFileTitles();
+                        }
+                    }
+                }
+            });
+        });
 
         this.observer = new MutationObserver((mutations) => {
             if (
@@ -31,6 +58,7 @@ export class FileNameStylerPlugin extends Plugin {
 
         this.refreshAll();
 
+        // handle rename by other methods not from file explorer
         this.app.vault.on("rename", () => {
             this.restoreOriginalFileTitles();
         });
@@ -38,6 +66,7 @@ export class FileNameStylerPlugin extends Plugin {
 
     refreshAll() {
         if (this.observer) this.observer.disconnect();
+        if (this.renameObserver) this.renameObserver.disconnect();
 
         this.restoreOriginalFileTitles();
         this.applyStylingToFileNames();
@@ -46,10 +75,17 @@ export class FileNameStylerPlugin extends Plugin {
             childList: true,
             subtree: true,
         });
+        this.renameObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributeFilter: ["class"],
+        });
     }
 
     onunload() {
         this.observer.disconnect();
+        this.renameObserver.disconnect();
+
         this.restoreOriginalFileTitles();
     }
 
@@ -80,6 +116,8 @@ export class FileNameStylerPlugin extends Plugin {
         fileTitles.forEach((el: Element) => {
             const htmlEl = el as HTMLElement;
             const parent = el.closest(".tree-item-self");
+            if (parent?.classList.contains("is-being-renamed")) return;
+
             const path = parent?.getAttribute("data-path") || "";
             const originalText =
                 htmlEl.dataset.originalTitle || htmlEl.textContent || "";
